@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lion's Roar Slot Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      background: linear-gradient(to bottom, #f6d365 0%, #fda085 100%);
+      font-family: 'Segoe UI', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      color: #824800;
+      text-shadow: 2px 2px 8px #fff8;
+      margin-top: 24px;
+      margin-bottom: 10px;
+    }
+    #slot-container {
+      background: #ffefc2;
+      border: 8px solid #b8860b;
+      border-radius: 20px;
+      box-shadow: 0 4px 32px #d6a90044;
+      padding: 24px 32px;
+      margin-top: 10px;
+      text-align: center;
+      position: relative;
+    }
+    #reels {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 12px;
+      justify-content: center;
+    }
+    .reel {
+      background: #fffbe8;
+      border: 3px solid #b8860b;
+      border-radius: 12px;
+      width: 66px;
+      height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      box-shadow: 0 2px 8px #b8860b44;
+      transition: background 0.2s;
+    }
+    #spin-btn, #bet-btn, #bonus-btn {
+      padding: 11px 28px;
+      font-size: 1.2rem;
+      color: #fff;
+      background: #b8860b;
+      border: none;
+      border-radius: 8px;
+      margin: 8px 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+      box-shadow: 0 2px 8px #b8860b44;
+    }
+    #spin-btn:disabled, #bonus-btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #balance, #bet, #free-spins {
+      font-size: 1.1rem;
+      margin: 7px 0 0 0;
+      color: #824800;
+    }
+    #message {
+      font-size: 1.2rem;
+      margin-top: 10px;
+      color: #d2691e;
+      min-height: 28px;
+      font-weight: bold;
+    }
+    #bonus-btn {
+      background: #e67e22;
+      display: none;
+    }
+    /* Responsive */
+    @media (max-width: 600px) {
+      #slot-container { padding: 12px 3vw; }
+      .reel { width: 46px; height: 46px; font-size: 1.4rem; }
+      #spin-btn, #bet-btn, #bonus-btn { padding: 7px 14px; font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Lion's Roar Slot</h1>
+  <div id="slot-container">
+    <div id="reels">
+      <div class="reel">🦁</div>
+      <div class="reel">🍖</div>
+      <div class="reel">🌴</div>
+    </div>
+    <div>
+      <button id="spin-btn">Spin</button>
+      <button id="bet-btn">Change Bet</button>
+      <button id="bonus-btn">Play Bonus</button>
+    </div>
+    <div id="balance">Balance: $100</div>
+    <div id="bet">Bet: $5</div>
+    <div id="free-spins"></div>
+    <div id="message"></div>
+  </div>
+  <script>
+    // Symbol definitions and payout table
+    const symbols = [
+      { emoji: "🦁", name: "Lion",      type: "wild" },  // Wild symbol
+      { emoji: "🍖", name: "Meat",      type: "normal" },
+      { emoji: "🌴", name: "Palm",      type: "normal" },
+      { emoji: "💎", name: "Diamond",   type: "bonus" }, // Bonus symbol
+      { emoji: "🐾", name: "Pawprint",  type: "normal" }
+    ];
+    // Payouts: 3 of a kind
+    const payouts = {
+      "🦁": 40,  // Wild (Lion)
+      "🍖": 15,
+      "🌴": 10,
+      "💎": 0,   // Bonus symbol triggers bonus, not a payout
+      "🐾": 8
+    };
+    // Payouts with 2 of a kind and wild
+    const twoKindPayouts = {
+      "🦁": 6,
+      "🍖": 4,
+      "🌴": 3,
+      "🐾": 2
+    };
+    // Bonus feature settings
+    let inBonusGame = false;
+    let freeSpins = 0;
+    let balance = 100;
+    let bet = 5;
+    let betChoices = [1, 2, 5, 10, 20];
+    let currentBetIdx = 2;
+    const reels = document.querySelectorAll('.reel');
+    const spinBtn = document.getElementById('spin-btn');
+    const betBtn = document.getElementById('bet-btn');
+    const bonusBtn = document.getElementById('bonus-btn');
+    const balanceDiv = document.getElementById('balance');
+    const betDiv = document.getElementById('bet');
+    const freeSpinsDiv = document.getElementById('free-spins');
+    const messageDiv = document.getElementById('message');
+    // Weighted reels: more wilds and bonus at higher bets
+    function getReelSymbols() {
+      let base = [
+        "🦁","🍖","🌴","💎","🐾",
+        "🍖","🌴","🐾","🍖","🌴",
+        "🦁","🐾","🍖","🌴","🐾"
+      ];
+      if (bet >= 10) base.push("🦁","💎","💎"); // More wilds/bonus at higher bets
+      return base;
+    }
+    // Spin function
+    function spin() {
+      if (balance < bet && freeSpins === 0) {
+        showMessage("Not enough balance!");
+        return;
+      }
+      clearMessage();
+      spinBtn.disabled = true;
+      betBtn.disabled = true;
+      if (freeSpins === 0) balance -= bet;
+      updateDisplay();
+      // Animate reels
+      let spinIntervals = [];
+      for (let i = 0; i < 3; i++) {
+        let reel = reels[i];
+        let count = 0;
+        spinIntervals[i] = setInterval(() => {
+          let s = symbols[Math.floor(Math.random()*symbols.length)].emoji;
+          reel.textContent = s;
+          count++;
+          if (count > 8 + Math.random()*8) {
+            clearInterval(spinIntervals[i]);
+            if (i === 2) finishSpin();
+          }
+        }, 60 + i*30);
+      }
+    }
+    // After spin: calculate win, handle features
+    function finishSpin() {
+      let result = Array.from(reels).map(r => r.textContent);
+      // Count occurrences
+      let counts = {};
+      result.forEach(s => counts[s] = (counts[s]||0)+1);
+      // Check for bonus (3x 💎)
+      if (counts["💎"] === 3) {
+        inBonusGame = true;
+        bonusBtn.style.display = 'inline-block';
+        showMessage("BONUS GAME! Click 'Play Bonus'");
+        spinBtn.disabled = true;
+        return;
+      }
+      // Check for free spins: 3x 🦁 or 2x 🦁 + 1x wild
+      if (counts["🦁"] === 3) {
+        freeSpins += 5;
+        showMessage("LION'S ROAR! +5 Free Spins!");
+        payoutWin("🦁", 3);
+      } else if (counts["🦁"] === 2) {
+        freeSpins += 2;
+        showMessage("Double Lion! +2 Free Spins!");
+        payoutWin("🦁", 2);
+      } else {
+        // Wild symbol: treat as joker for 2 of a kind
+        let nonWilds = result.filter(s => s !== "🦁");
+        if (nonWilds.length === 1 && result.filter(s => s === "🦁").length === 2) {
+          // 2 wilds + 1 symbol = treat as 3 of that symbol
+          payoutWin(nonWilds[0], 3);
+        } else if (nonWilds.length === 2 && result.includes("🦁")) {
+          // 1 wild + 2 of same symbol = 3 of that symbol
+          if (nonWilds[0] === nonWilds[1]) payoutWin(nonWilds[0], 3);
+          else showMessage("No win!");
+        } else if (Object.values(counts).some(cnt => cnt === 2)) {
+          // 2 of a kind
+          let sym = Object.keys(counts).find(k => counts[k] === 2 && k !== "💎");
+          if (sym) payoutWin(sym, 2);
+          else showMessage("No win!");
+        } else {
+          showMessage("No win!");
+        }
+      }
+      // Free spin handling
+      if (freeSpins > 0) {
+        freeSpinsDiv.textContent = `Free Spins: ${freeSpins}`;
+        setTimeout(() => {
+          freeSpins--;
+          if (freeSpins === 0) freeSpinsDiv.textContent = '';
+          spinBtn.disabled = false;
+          betBtn.disabled = false;
+          spin();
+        }, 1200);
+      } else {
+        spinBtn.disabled = false;
+        betBtn.disabled = false;
+      }
+      updateDisplay();
+    }
+    // Payout function
+    function payoutWin(symbol, count) {
+      let win = 0;
+      if (count === 3) win = payouts[symbol] * bet;
+      else if (count === 2) win = twoKindPayouts[symbol] * bet;
+      if (win > 0) {
+        balance += win;
+        showMessage(`You won $${win} with ${count} ${symbol === "🦁" ? "Lions" : symbols.find(s=>s.emoji===symbol).name + "s"}!`);
+      } else {
+        showMessage("No win!");
+      }
+      updateDisplay();
+    }
+    // Bonus game: pick one of three chests, random big win
+    function playBonus() {
+      inBonusGame = false;
+      bonusBtn.disabled = true;
+      showMessage("Pick a chest for your bonus!");
+      // Render chests
+      let chestDiv = document.createElement('div');
+      chestDiv.style.display = 'flex';
+      chestDiv.style.justifyContent = 'center';
+      chestDiv.style.gap = '38px';
+      chestDiv.style.marginTop = '14px';
+      for (let i = 0; i < 3; i++) {
+        let btn = document.createElement('button');
+        btn.textContent = "🪙";
+        btn.style.fontSize = '2.7rem';
+        btn.style.padding = '16px';
+        btn.style.borderRadius = '14px';
+        btn.style.border = '3px solid #b8860b';
+        btn.style.background = "#fffbe8";
+        btn.onclick = function() {
+          let prizes = [bet*20, bet*7, bet*15];
+          let shuffled = prizes.sort(()=>Math.random()-0.5);
+          let prize = shuffled[i];
+          balance += prize;
+          chestDiv.remove();
+          showMessage(`You got $${prize} from the bonus!`);
+          bonusBtn.style.display = 'none';
+          spinBtn.disabled = false;
+          betBtn.disabled = false;
+          updateDisplay();
+        };
+        chestDiv.appendChild(btn);
+      }
+      document.getElementById('slot-container').appendChild(chestDiv);
+    }
+    // UI updates
+    function updateDisplay() {
+      balanceDiv.textContent = `Balance: $${balance}`;
+      betDiv.textContent = `Bet: $${bet}`;
+      if (freeSpins > 0) freeSpinsDiv.textContent = `Free Spins: ${freeSpins}`;
+      else freeSpinsDiv.textContent = '';
+      spinBtn.disabled = inBonusGame;
+      bonusBtn.disabled = !inBonusGame;
+    }
+    function showMessage(msg) {
+      messageDiv.textContent = msg;
+    }
+    function clearMessage() {
+      messageDiv.textContent = '';
+    }
+    // Event listeners
+    spinBtn.onclick = spin;
+    betBtn.onclick = () => {
+      currentBetIdx = (currentBetIdx + 1) % betChoices.length;
+      bet = betChoices[currentBetIdx];
+      updateDisplay();
+    };
+    bonusBtn.onclick = playBonus;
+
+    // Initial
+    updateDisplay();
+    showMessage("Welcome! Spin to play. Get 3 💎 for Bonus, 3 🦁 for Free Spins!");
+  </script>
+</body>
+</html>
